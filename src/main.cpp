@@ -4,6 +4,9 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <sys/types.h>
+#include <unistd.h>
+#include "zlib.h"
 #include "tinyxml.h"
 #include "base64.h"
 #include "version.h"
@@ -242,11 +245,62 @@ int main(int argc, char **argv)
 			}
 
 			string data = base64_decode(b64data);
+			string decomp_data;
 
-			printf("\ttext: [%s]\n", data.c_str());
-			printf("textlen: %d\n", data.length());
-			// TODO: save BASE64 coded text, decompress and demunge
-//			dump_to_stdout(pArea);
+			printf("compressed textlen: %ld\n", data.length());
+
+			if (encoding.compare("gzip") == 0) {
+				const size_t BLKSZ = 8192;
+
+				// first need to dump the zlib data to a file
+				char tmpfn[32] = "/tmp/magick.XXXXXX";
+				int fd = mkstemp(tmpfn);
+				if (fd == -1) {
+					printf("ERROR! mkstemp failed!\n");
+					return EXIT_FAILURE;
+				}
+				write(fd, data.c_str(), data.length());
+				fsync(fd);
+				lseek(fd, 0, SEEK_SET);
+
+				// now gunzip it
+				gzFile gzf = gzdopen(fd, "rb");
+				if (gzf == NULL) {
+					close(fd);
+					printf("Error GZOPENing our temp file...!\n");
+					return EXIT_FAILURE;
+				}
+
+				int x;
+				char *buf = new char[BLKSZ];
+				string str;
+				while ((x = gzread(gzf, buf, BLKSZ)) > 0) {
+					// deobfuscate before we dump the data in the OP buffer
+					for (int n=0; n<x; n++) {
+						buf[n] ^= 0xAA;
+					}
+					str.append(buf, x);
+				}
+				delete buf;
+
+				// Now reverse the bytes in the string (second level of obfuscation)
+				for (string::const_iterator it = str.end()-1; it >= str.begin(); it-=2) {
+					decomp_data.push_back(*it);
+				}
+
+				printf("decomp data: len %ld, data %s\n", decomp_data.length(), decomp_data.c_str());
+
+				// close the FD, deleting the temp file in the process
+				gzclose(gzf);
+				close(fd);
+			} else {
+				// TODO: have never seen this used...!
+				printf("NOT_IMPLEMENTED: have never seen a non-gzipped blob! cowardly aborting!\n");
+				return EXIT_FAILURE;
+				// TODO: we could just do decomp_data = data...
+			}
+
+			// We now have the string decomp_data, which contains 
 		}
 	}
 
