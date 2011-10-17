@@ -1,0 +1,5 @@
+syntax: glob
+obj/*.o
+dep/*.d
+*~
+.*.sw?
