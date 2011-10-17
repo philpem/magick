@@ -131,7 +131,7 @@ BUILD_TYPE	?=	debug
 TARGET		=	magick
 
 # source files that produce object files
-SRC			=	main.cpp
+SRC			=	main.cpp base64.cpp
 
 # source type - either "c" or "cpp" (C or C++)
 SRC_TYPE	=	cpp
