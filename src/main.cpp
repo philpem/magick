@@ -224,6 +224,7 @@ int main(int argc, char **argv)
 		}
 
 		if (idlist.find(itemID) != idlist.end()) {
+			printf("\n");
 			printf("Deobfuscating and unlocking area with item-ID %d...\n", itemID);
 			string encoding;
 
@@ -341,6 +342,8 @@ int main(int argc, char **argv)
 		}
 	}
 
+	printf("\n");
+
 	/***
 	 * For bonus points, lets obliterate the document password (har har har)
 	 * It turns out this is even easier than "decrypting" (ROFL) the
@@ -366,9 +369,12 @@ int main(int argc, char **argv)
 
 		if (protection) {
 			printf("Removing document protection password...\n");
+			printf("Protection level is %s\n", protection->Attribute("protection-level"));
+			printf("Password hash is %s\n", protection->Attribute("password"));
+			// TODO: dump password hash bytes
 			editor->RemoveChild(protection);
 		} else {
-			printf("No document protection password, skipping...\n");
+			printf("No document protection password set -- skipping password removal...\n");
 		}
 	} while (false);	// end scope limiter
 
@@ -376,7 +382,7 @@ int main(int argc, char **argv)
 	// because after all this hassle... we may as well.
 	string fn(argv[1]);
 	fn = "unlocked_" + fn;
-	printf("saving to file '%s'...\n", fn.c_str());
+	printf("\nSaving output to file '%s'...\n", fn.c_str());
 	doc.SaveFile(fn.c_str());
 
 	return EXIT_SUCCESS;
