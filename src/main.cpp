@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	printf("Casting magick spells on %s...\n", argv[1]);
+	printf("Removing area protections from %s...\n", argv[1]);
 
 	// load the document
 	TiXmlDocument doc(argv[1]);
@@ -224,7 +224,7 @@ int main(int argc, char **argv)
 		}
 
 		if (idlist.find(itemID) != idlist.end()) {
-			printf("item ID %d seen; is in ID List\n", itemID);
+			printf("Deobfuscating and unlocking area with item-ID %d...\n", itemID);
 			string encoding;
 
 			if (pArea->ToElement()->QueryStringAttribute("content-encoding", &encoding) != TIXML_SUCCESS) {
@@ -247,7 +247,7 @@ int main(int argc, char **argv)
 			string data = base64_decode(b64data);
 			string decomp_data;
 
-			printf("compressed textlen: %ld\n", data.length());
+//			printf("compressed textlen: %ld\n", data.length());
 
 			if (encoding.compare("gzip") == 0) {
 				const size_t BLKSZ = 8192;
@@ -288,7 +288,7 @@ int main(int argc, char **argv)
 					decomp_data.push_back(*it);
 				}
 
-				printf("decomp data: len %ld, data %s\n", decomp_data.length(), decomp_data.c_str());
+//				printf("decomp data: len %ld, data %s\n", decomp_data.length(), decomp_data.c_str());
 
 				// close the FD and delete the temp file
 				gzclose(gzf);
@@ -305,6 +305,15 @@ int main(int argc, char **argv)
 			// Parse and convert it into an XML document.
 			TiXmlDocument areaDoc;
 			areaDoc.Parse(decomp_data.c_str());
+
+			// Dump the password hash for debugging
+			string pwhash = areaDoc.FirstChildElement("area")->Attribute("password");
+			printf("\tHashed Password for this area: %s\n", pwhash.c_str());
+			string pw = base64_decode(pwhash);
+			printf("\tPassword bytes: ");
+			for (string::const_iterator it = pw.begin(); it != pw.end(); it++)
+				printf("%02X ", static_cast<unsigned char>(*it));
+			printf("\n");
 
 			/***
 			 * Per CVE-2006-7037:
