@@ -184,7 +184,7 @@ int main(int argc, char **argv)
 //	dump_to_stdout(elem);
 
 //	now get an ID list of all the confidentialArea blocks
-	vector<int> idlist;
+	map<int, TiXmlElement*> idlist;
 	for (TiXmlNode* pRegion = pRegions->FirstChild(); pRegion != 0; pRegion = pRegion->NextSibling())
 	{
 		// see if this region has a confidential area attached to it
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
 				return EXIT_FAILURE;
 			} else {
 				// got a valid ID, push it into the ID list
-				idlist.push_back(x);
+				idlist[x] = pRegion->ToElement();
 			}
 
 			// next element, please!
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 
-		if (std::find(idlist.begin(), idlist.end(), itemID) != idlist.end()) {
+		if (idlist.find(itemID) != idlist.end()) {
 			printf("item ID %d seen; is in ID List\n", itemID);
 			string encoding;
 
@@ -290,9 +290,10 @@ int main(int argc, char **argv)
 
 				printf("decomp data: len %ld, data %s\n", decomp_data.length(), decomp_data.c_str());
 
-				// close the FD, deleting the temp file in the process
+				// close the FD and delete the temp file
 				gzclose(gzf);
 				close(fd);
+				unlink(tmpfn);
 			} else {
 				// TODO: have never seen this used...!
 				printf("NOT_IMPLEMENTED: have never seen a non-gzipped blob! cowardly aborting!\n");
@@ -300,9 +301,74 @@ int main(int argc, char **argv)
 				// TODO: we could just do decomp_data = data...
 			}
 
-			// We now have the string decomp_data, which contains 
+			// We now have the string decomp_data, which contains the Area.
+			// Parse and convert it into an XML document.
+			TiXmlDocument areaDoc;
+			areaDoc.Parse(decomp_data.c_str());
+
+			/***
+			 * Per CVE-2006-7037:
+			 * Complete removal of lock – Inside the Area tag there are is an
+			 * ‘is-locked’ attribute. When a lock has been enabled this is set
+			 * to true. However to remove the lock all that needs to be done
+			 * is change this value to false. Out of completeness the
+			 * ‘timestamp’ attribute should be changed to an empty string and
+			 * then the ‘password’ attribute removed. Although these last two
+			 * changes are not needed to unlock the Area.
+			 */
+			areaDoc.FirstChildElement("area")->SetAttribute("is-locked", "false");
+			areaDoc.FirstChildElement("area")->SetAttribute("timestamp", "");
+			areaDoc.FirstChildElement("area")->RemoveAttribute("password");
+
+			// Use the ID map to replace the confidentialArea blocks with good
+			// ol' reg'lar Areas, just like Mom used to make.
+			idlist[itemID]->ReplaceChild(
+					idlist[itemID]->FirstChildElement("confidentialArea"),
+					*(areaDoc.FirstChildElement("area"))
+					);
+
+			// Finally, remove the binaryContent data chunk for this ID
+			pBinaryContent->RemoveChild(pArea);
 		}
 	}
+
+	/***
+	 * For bonus points, lets obliterate the document password (har har har)
+	 * It turns out this is even easier than "decrypting" (ROFL) the
+	 * obfuscated area blocks... Per CVE-2007-4600:
+	 *
+	 * Once the XML file has been extracted, within the <editor> tag there
+	 * will be a <protection> tag. This will look like:
+	 *   <protection protection-level="low" password="XZEdIlJPXZxa1CQRKn6Sfw=="/>
+	 *
+	 * [...]
+	 *
+	 * Due to these limitations the entire <protection> tag could be removed,
+	 * the level of protection could be reduced, or the password could be
+	 * changed.
+	 *
+	 * "When we pull the pin, Mr. Grenade is NOT OUR FRIEND!"
+	 */
+	do {	// scope limiter
+		TiXmlElement *worksheet = doc.FirstChildElement("worksheet");
+		TiXmlElement *settings = worksheet->FirstChildElement("settings");
+		TiXmlElement *editor = settings ? settings->FirstChildElement("editor") : NULL;
+		TiXmlElement *protection = editor ? editor->FirstChildElement("protection") : NULL;
+
+		if (protection) {
+			printf("Removing document protection password...\n");
+			editor->RemoveChild(protection);
+		} else {
+			printf("No document protection password, skipping...\n");
+		}
+	} while (false);	// end scope limiter
+
+	// save our butchered document to a file
+	// because after all this hassle... we may as well.
+	string fn(argv[1]);
+	fn = "unlocked_" + fn;
+	printf("saving to file '%s'...\n", fn.c_str());
+	doc.SaveFile(fn.c_str());
 
 	return EXIT_SUCCESS;
 }
