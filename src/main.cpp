@@ -133,6 +133,32 @@ void dump_to_stdout(const char* pFilename)
 }
 /**************** from tinyxml docs ******************/
 
+std::string depassword(std::string const& encoded_string)
+{
+	const unsigned char keystream[] = {
+		0x2D, 0x91, 0x7C, 0x22, 0x21, 0x4F, 0x2E, 0x9C,
+		0x2D, 0xD4, 0x4B, 0x11, 0x58, 0x7E, 0xF6, 0x7F,
+		0x8F, 0x2B, 0x2A, 0x4A, 0xAD, 0xD8, 0x22, 0x0B,
+		0x52, 0x4E, 0xAB, 0x1F, 0x05, 0xF5, 0x44, 0xDC,
+		0x9E, 0xB3, 0x11, 0x6C, 0x70, 0x59, 0xFE, 0xC7,
+		0xC1, 0x6B, 0xB7, 0x17, 0xAE, 0xB5, 0x1A, 0xA7,
+		0xDF, 0x87, 0xAD, 0x04, 0x67, 0xBD, 0xBA, 0x11,
+		0x42, 0x7C, 0x0A, 0x9D, 0x6F, 0x6B
+	};
+	string output;
+	int pos = 0;
+
+	for (string::const_iterator it = encoded_string.begin(); it != encoded_string.end(); it++) {
+		char k = (*it ^ keystream[pos++]);
+		// deal with Mathcad 14/15 Unicode... by ignoring it <g>
+		// FIXME should probably detect MC14/15 and do some proper de-Unicode-ing here
+		if (k != 0x00)
+			output = output + k;
+	}
+
+	return output;
+}
+
 int main(int argc, char **argv)
 {
 	printf("MAGICK: MathCad Locked Area Password Hash Dumper\nVersion %s; %s build\n", VER_FULLSTR, VER_BUILD_TYPE);
@@ -189,6 +215,7 @@ int main(int argc, char **argv)
 	{
 		// see if this region has a confidential area attached to it
 		TiXmlElement* pCa = pRegion->ToElement()->FirstChildElement("confidentialArea");
+		TiXmlElement* pAr = pRegion->ToElement()->FirstChildElement("area");
 		while (pCa) {
 //			dump_to_stdout(pCa);
 
@@ -204,6 +231,28 @@ int main(int argc, char **argv)
 
 			// next element, please!
 			pCa = pCa->NextSiblingElement("confidentialArea");
+		}
+
+		// Deal with password-protected areas too (these don't usually have IDRefs)
+		while (pAr) {
+//			dump_to_stdout(pAr);
+
+			// does this area have a password set?
+			string pwhash;
+			if (pAr->QueryStringAttribute("password", &pwhash) == TIXML_SUCCESS) {
+				printf("Found an unlocked area with a password set --\n");
+				string pw = base64_decode(pwhash);
+				printf("\tPassword bytes: ");
+				for (string::const_iterator it = pw.begin(); it != pw.end(); it++)
+					printf("%02X ", static_cast<unsigned char>(*it));
+				printf("\n");
+
+				string depw = depassword(pw);
+				printf("\tPassword: %s\n", depw.c_str());
+			}
+
+			// next area, please!
+			pAr = pAr->NextSiblingElement("area");
 		}
 	}
 
@@ -315,6 +364,8 @@ int main(int argc, char **argv)
 			for (string::const_iterator it = pw.begin(); it != pw.end(); it++)
 				printf("%02X ", static_cast<unsigned char>(*it));
 			printf("\n");
+			string depw = depassword(pw);
+			printf("\tPassword: %s\n", depw.c_str());
 
 			/***
 			 * Per CVE-2006-7037:
